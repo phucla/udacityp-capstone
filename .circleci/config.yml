@@ -1,0 +1,210 @@
+version: 2.1
+orbs:
+  aws: circleci/aws-cli@3.1.5
+  python: circleci/python@2.1.1
+  slack: circleci/slack@4.12.1
+
+executors:
+  node:
+    docker:
+      - image: cimg/node:13.8.0
+
+commands:
+  slack_notification:
+    description: "Slack notification"
+    steps:
+      - slack/notify:
+          custom: |
+            {
+              "attachments": [
+                {
+                  "color": "#d50054",
+                  "blocks": [
+                    {
+                      "type": "header",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "Your build is FAILED",
+                        "emoji": true
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "Build *${CIRCLE_BUILD_NUM}* is failed. Job is ${CIRCLE_JOB} as here: ${CIRCLE_BUILD_URL}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          event: fail
+
+      - slack/notify:
+          event: pass
+          custom: |
+            {
+              "attachments": [
+                {
+                  "color": "#00d581",
+                  "blocks": [
+                    {
+                      "type": "header",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "Your build is PASSED",
+                        "emoji": true
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "Build *${CIRCLE_BUILD_NUM}* is PASSED as here: ${CIRCLE_BUILD_URL}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+  destroy-stack:
+    description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
+    parameters:
+      stack_name:
+        type: string
+    steps:
+      - run:
+          name: Destroy environments
+          when: on_fail
+          command: |
+            aws cloudformation delete-stack --stack-name "<<parameters.stack_name>>"
+
+  delete_s3:
+    description: Delete all S3
+    parameters:
+      id:
+        type: string
+    steps:
+      - run:
+          name: delete all aws s3 files
+          command: aws s3 rm s3://udapeople-<< parameters.id >> --recursive
+          when: on_fail
+
+  install_ansible:
+    description: Install Ansible
+    steps:
+      - run:
+          name: Install Ansible
+          command: |
+            sudo apt update
+            sudo apt install software-properties-common -y
+            sudo add-apt-repository --yes --update ppa:ansible/ansible
+            sudo apt install ansible -y
+  install_dependencies:
+    description: install dependencies and setup aws cli
+    steps:
+      - run:
+          name: install dependencies
+          command: |
+            sudo apt upgrade
+            sudo apt update
+            sudo apt install awscli -y
+      - run:
+          name: config awscli
+          command: |
+            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+            aws configure set region $AWS_DEFAULT_REGION
+
+  setup_aws:
+    description: setup aws
+    steps:
+      - aws/setup:
+          aws-access-key-id: AWS_ACCESS_KEY_ID
+          aws-secret-access-key: AWS_SECRET_ACCESS_KEY
+          aws-region: AWS_DEFAULT_REGION
+
+  revert-migrations:
+    description: Revert the last migration if successfully run in the current workflow.
+    parameters:
+      force_revert:
+        type: boolean
+        default: false
+    steps:
+      - run:
+          name: Revert migrations
+          command: |
+            cd ~/project/backend
+            npm install
+            npm run migrations:revert
+          when: on_fail
+
+jobs:
+  build-frontend:
+    docker:
+      - image: cimg/node:13.13.0
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - node-cache-{{ checksum "yarn.lock" }}
+            - node-cache-
+      - run:
+          name: Build front-end
+          command: |
+            cd frontend
+            yarn install
+            yarn build
+      - save_cache:
+          paths: [frontend/node_modules]
+          keys:
+            - node-cache-{{ checksum "yarn.lock" }}
+            - node-cache-
+
+  test-frontend:
+    docker:
+      - image: cimg/node:13.13.0
+    steps:
+      - checkout
+      - restore_cache:
+          keys: [test-frontend]
+      - run:
+          name: Test frontend
+          command: |
+            cd frontend
+            yarn install
+            yarn test
+      - save_cache:
+          paths: [frontend/node_modules]
+          keys:
+            - node-cache-{{ checksum "yarn.lock" }}
+            - node-cache-
+
+  build-fe-docker-img:
+    docker:
+      - image: cimg/base:2022.06
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: login docker
+          command: docker login --username $DOCKER_USERNAME --password $DOCKER_PASSWORD
+      - run:
+          name: build docker img
+          command: |
+            scripts/build-images.sh frontend/Dockerfile fe-app
+      - run:
+          name: push docker img
+          command: |
+            bash scripts/push-images.sh frontend/Dockerfile fe-app
+
+workflows:
+  default:
+    jobs:
+      - build-frontend
+      - test-frontend:
+          requires: [build-frontend]
+      - build-fe-docker-img:
+          requires: [test-frontend]
