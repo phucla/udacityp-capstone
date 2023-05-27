@@ -7,67 +7,33 @@ orbs:
 executors:
   node:
     docker:
-      - image: cimg/node:13.8.0
+      - image: cimg/node:18.0.0
 
 commands:
-  slack_notification:
-    description: "Slack notification"
+  setup-kubectl:
+    description: Install kubectl
     steps:
-      - slack/notify:
-          custom: |
-            {
-              "attachments": [
-                {
-                  "color": "#d50054",
-                  "blocks": [
-                    {
-                      "type": "header",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "Your build is FAILED",
-                        "emoji": true
-                      }
-                    },
-                    {
-                      "type": "section",
-                      "text": {
-                        "type": "mrkdwn",
-                        "text": "Build *${CIRCLE_BUILD_NUM}* is failed. Job is ${CIRCLE_JOB} as here: ${CIRCLE_BUILD_URL}"
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
-          event: fail
+      - run:
+          name: Install kubectl
+          command: |
+            sudo apt update
+            curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.23.17/2023-05-11/bin/linux/amd64/kubectl
+            chmod +x ./kubectl
+            mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
+            kubectl version --short --client
 
-      - slack/notify:
-          event: pass
-          custom: |
-            {
-              "attachments": [
-                {
-                  "color": "#00d581",
-                  "blocks": [
-                    {
-                      "type": "header",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "Your build is PASSED",
-                        "emoji": true
-                      }
-                    },
-                    {
-                      "type": "section",
-                      "text": {
-                        "type": "mrkdwn",
-                        "text": "Build *${CIRCLE_BUILD_NUM}* is PASSED as here: ${CIRCLE_BUILD_URL}"
-                      }
-                    }
-                  ]
-                }
-              ]
-            }
+  setup-eksctl:
+    steps:
+      - run:
+          name: install eksctl
+          command: |
+            curl --silent --location "https://github.com/weaveworks/eksctl/releases/download/latest_release/eksctl_$(uname -s)_amd64.tar.gz"
+            sudo mv /tmp/eksctl /usr/local/bin
+            tar xz -C /tmp
+
+            sudo mv /tmp/eksctl /usr/local/bin
+            eksctl version
+
   destroy-stack:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
     parameters:
@@ -79,6 +45,17 @@ commands:
           when: on_fail
           command: |
             aws cloudformation delete-stack --stack-name "<<parameters.stack_name>>"
+
+  revert-deploy:
+    description: Revert deploy
+    steps:
+      - run:
+          name: revert
+          command: |
+            kubectl rollout undo deployment uda-capstone
+            kubectl describe deployment uda-capstone
+            kubectl get all
+          when: on_fail
 
   delete_s3:
     description: Delete all S3
@@ -125,61 +102,65 @@ commands:
           aws-secret-access-key: AWS_SECRET_ACCESS_KEY
           aws-region: AWS_DEFAULT_REGION
 
-  revert-migrations:
-    description: Revert the last migration if successfully run in the current workflow.
-    parameters:
-      force_revert:
-        type: boolean
-        default: false
-    steps:
-      - run:
-          name: Revert migrations
-          command: |
-            cd ~/project/backend
-            npm install
-            npm run migrations:revert
-          when: on_fail
-
 jobs:
-  build-frontend:
+  build-app:
     docker:
-      - image: cimg/node:13.13.0
+      - image: cimg/node:18.0.0
     steps:
       - checkout
       - restore_cache:
-          keys:
-            - node-cache-{{ checksum "yarn.lock" }}
-            - node-cache-
+          key: fe-build--{{ .Revision  }}
       - run:
           name: Build front-end
           command: |
-            cd frontend
+            cd app
             yarn install
             yarn build
       - save_cache:
           paths: [frontend/node_modules]
-          keys:
-            - node-cache-{{ checksum "yarn.lock" }}
-            - node-cache-
+          key: fe-build--{{ .Revision  }}
 
-  test-frontend:
+  test-app:
     docker:
-      - image: cimg/node:13.13.0
+      - image: cimg/node:18.0.0
     steps:
       - checkout
       - restore_cache:
-          keys: [test-frontend]
+          key: fe-build--{{ .Revision  }}
       - run:
-          name: Test frontend
+          name: Test App
           command: |
-            cd frontend
+            cd app
             yarn install
             yarn test
-      - save_cache:
-          paths: [frontend/node_modules]
-          keys:
-            - node-cache-{{ checksum "yarn.lock" }}
-            - node-cache-
+
+  scan-app:
+    docker:
+      - image: cimg/node:18.0.0
+    steps:
+      - checkout
+      - restore_cache:
+          key: fe-build--{{ .Revision  }}
+      - run:
+          name: Scan app
+          command: |
+            cd app
+            yarn install
+            yarn audit --audit-level=critical
+
+  lint-app:
+    docker:
+      - image: cimg/node:18.0.0
+    steps:
+      - checkout
+      - restore_cache:
+          key: fe-build--{{ .Revision  }}
+      - run:
+          name: Lint app
+          command: |
+            cd app
+            yarn install
+            yarn lint
 
   build-fe-docker-img:
     docker:
@@ -194,17 +175,56 @@ jobs:
       - run:
           name: build docker img
           command: |
-            scripts/build-images.sh frontend/Dockerfile fe-app
+            scripts/build-docker.sh latest 
+            scripts/build-docker.sh ${CIRCLE_SHA1:0:7}
       - run:
           name: push docker img
           command: |
-            bash scripts/push-images.sh frontend/Dockerfile fe-app
+            chmod +x scripts/upload-docker.sh
+            scripts/upload-docker.sh latest 
+            scripts/upload-docker.sh ${CIRCLE_SHA1:0:7}
 
+  deploy-app:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - install_dependencies
+      - setup_aws
+      - setup-kubectl
+      - setup-eksctl
+      - run:
+          name: Create an EKS Cluster
+          command: |
+            aws eks update-kubeconfig --region us-east-1 --name uda-capstone-cluster
+            kubectl config get-contexts
+            kubectl get all
+            kubectl describe deployment uda-app-deployment
+      - run:
+          name: deploy app
+          command: |
+            kubectl set image deployment/uda-capstone uda-app=phucla132/fe-app:${CIRCLE_SHA1:0:7}
+            kubectl rollout status deployment uda-capstone
+            kubectl describe deployment uda-capstone
+            kubectl get all
+      - run:
+          name: smoke test
+          command: |
+            chmod +x scripts/smoke-test.sh
+            scripts/smoke-test.sh
+      - revert-deploy
 workflows:
   default:
     jobs:
-      - build-frontend
-      - test-frontend:
-          requires: [build-frontend]
+      - lint-app
+      - build-app:
+          requires: [lint-app]
+      - test-app:
+          requires: [build-app]
+      - scan-app:
+          requires: [build-app]
+
       - build-fe-docker-img:
-          requires: [test-frontend]
+          requires: [test-app, build-app, scan-app, lint-app]
+      - deploy-app:
+          requires: [build-fe-docker-img]

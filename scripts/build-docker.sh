@@ -1,8 +1,5 @@
-#/bin/bash
+#!/usr/bin/env bash
+TAG=$1
 
-PATH=$1
-TAG=$2
-
-docker build -f $PATH . -t phucla132/$TAG:latest
-
-fi
+pwd
+docker build -f app/Dockerfile . -t phucla132/fe-app:$TAG
