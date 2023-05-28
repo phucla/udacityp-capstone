@@ -31,7 +31,6 @@ commands:
             sudo mv /tmp/eksctl /usr/local/bin
             tar xz -C /tmp
 
-            sudo mv /tmp/eksctl /usr/local/bin
             eksctl version
 
   destroy-stack:
