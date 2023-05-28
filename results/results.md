@@ -66,3 +66,7 @@ The cluster is deployed with CloudFormation or Ansible. This should be in the so
 ### Screenshot showing that you can access the application after deployment.
 
 ![App](images/app%20v1.png)
+
+#### Deploy new version
+
+![App](images/app%20v2.png)
