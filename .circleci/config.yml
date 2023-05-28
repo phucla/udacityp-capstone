@@ -209,24 +209,24 @@ jobs:
             kubectl rollout status deployment uda-capstone
             kubectl describe deployment uda-capstone
             kubectl get all
-      # - run:
-      #     name: smoke test
-      #     command: |
-      #       chmod +x scripts/smoke-test.sh
-      #       scripts/smoke-test.sh
-      # - revert-deploy
+      - run:
+          name: smoke test
+          command: |
+            chmod +x scripts/smoke-test.sh
+            scripts/smoke-test.sh
+      - revert-deploy
 workflows:
   default:
     jobs:
-      - lint-app
-      - build-app:
-          requires: [lint-app]
+      - build-app
+      - lint-app:
+          requires: [build-app]
       - test-app:
           requires: [build-app]
       - scan-app:
           requires: [build-app]
 
       - build-fe-docker-img:
-          requires: [test-app, build-app, scan-app, lint-app]
+          requires: [test-app, scan-app, lint-app]
       - deploy-app:
           requires: [build-fe-docker-img]

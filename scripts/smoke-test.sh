@@ -1,10 +1,9 @@
 #!/bin/bash
 
-sleep 30
-kubectl port-forward service/uda-app-service 8080:80
-sleep 10     
+URL="http://a17e3eb369c9347cda05c744748a1837-9b7ae2c4c411d008.elb.us-east-1.amazonaws.com/"            
+echo ${URL}   
 
-if curl -s --connect-timeout 10 "http://127.0.0.1:8080" | grep "React App"
+if curl -s --connect-timeout 10 ${URL} | grep "React App"
 then
   exit 0
 else
