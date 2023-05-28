@@ -2,6 +2,9 @@
 
 This project using AWS, K8S (EKS), cloudformation and circleCI
 
+- [Github repo](https://github.com/phucla/udacityp-capstone)
+- [My webapp deploy](a17e3eb369c9347cda05c744748a1837-9b7ae2c4c411d008.elb.us-east-1.amazonaws.com)
+
 ## Pipeline propose diagram
 
 ![diagram](diagram.png)
