@@ -4,6 +4,9 @@ Parameters:
   ClusterName:
     Description: Cluster name
     Type: String
+  StackName:
+    Description: An environment name that will be prefixed to resource names
+    Type: String
 
 Resources:
   EKSSecurityGroup:
@@ -11,7 +14,8 @@ Resources:
     Properties:
       GroupName: ESK-security-group
       GroupDescription: ESK security group
-      VpcId: !ImportValue VPC
+      VpcId:
+        Fn::ImportValue: !Sub "${StackName}-VPCID"
       SecurityGroupIngress:
         - IpProtocol: "-1"
           FromPort: 0
@@ -68,8 +72,8 @@ Resources:
         SecurityGroupIds:
           - !Ref EKSSecurityGroup
         SubnetIds:
-          - !ImportValue PublicSubnet1
-          - !ImportValue PublicSubnet2
+          - Fn::ImportValue: !Sub "${StackName}-PUB1-SN"
+          - Fn::ImportValue: !Sub "${StackName}-PUB2-SN"
       RoleArn: !GetAtt [EKSClusterRole, Arn]
 
   NodeGroup:
@@ -86,8 +90,8 @@ Resources:
       InstanceTypes:
         - t2.small
       Subnets:
-        - !ImportValue PublicSubnet1
-        - !ImportValue PublicSubnet2
+        - Fn::ImportValue: !Sub "${StackName}-PUB1-SN"
+        - Fn::ImportValue: !Sub "${StackName}-PUB2-SN"
       RemoteAccess:
         Ec2SshKey: udacity-capstone
     DependsOn: EKSCluster

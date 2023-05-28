@@ -2,5 +2,9 @@
   {
     "ParameterKey": "ClusterName",
     "ParameterValue": "uda-capstone-cluster"
+  },
+  {
+    "ParameterKey": "StackName",
+    "ParameterValue": "Udacity-Capstone"
   }
 ]
