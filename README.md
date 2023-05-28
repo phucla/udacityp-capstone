@@ -68,3 +68,7 @@ aws eks update-kubeconfig --region us-east-1 --name uda-capstone-cluster
 # Deploy cluster
 kubectl apply -f k8s/prod
 ```
+
+## Circleci status
+
+[![<udacityp-capstone>](https://circleci.com/gh/phucla/udacityp-capstone.svg?style=svg)](https://app.circleci.com/pipelines/github/phucla/udacityp-capstone)
