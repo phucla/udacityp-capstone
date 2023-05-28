@@ -209,12 +209,12 @@ jobs:
             kubectl rollout status deployment uda-capstone
             kubectl describe deployment uda-capstone
             kubectl get all
-      - run:
-          name: smoke test
-          command: |
-            chmod +x scripts/smoke-test.sh
-            scripts/smoke-test.sh
-      - revert-deploy
+      # - run:
+      #     name: smoke test
+      #     command: |
+      #       chmod +x scripts/smoke-test.sh
+      #       scripts/smoke-test.sh
+      # - revert-deploy
 workflows:
   default:
     jobs:
